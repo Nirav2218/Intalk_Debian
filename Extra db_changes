@@ -1,0 +1,6 @@
+SELECT v_users.user_uuid, v_groups.group_type
+FROM v_users
+LEFT JOIN v_group_users ON v_group_users.user_uuid = v_users.user_uuid
+LEFT JOIN v_groups ON v_groups.group_uuid = v_group_users.group_uuid
+WHERE v_users.username = username
+AND v_users.main_domain_uuid = domain_uuid;

@@ -1,0 +1,888 @@
+#!/bin/bash
+
+RED='\033[01;31m'
+RESET='\033[0m'
+GREEN='\033[01;32m'
+
+#apt update
+# add-apt-repository ppa:rock-core/qt4
+# add-apt-repository ppa:ubuntuhandbook1/ppa
+ 
+INTALK_CODE_FILE=intalk.io
+#INTALK_VERSION=latest
+ip_addr=$(ip route get 8.8.8.8 | awk 'NR==1 {print $NF}')
+
+echo "Intalk Version $INTALK_VERSION";
+
+echo "Server IP Address  $ip_addr";
+
+SCRIPT=$(readlink -f "$0")
+SCRIPTPATH=$(dirname "$SCRIPT")
+if [[ ! -e $SCRIPTPATH/log ]]; then
+mkdir $SCRIPTPATH/log
+fi
+
+
+BUILDDIR=$SCRIPTPATH/log/
+BUILDFILE=$RANDOM.txt
+BUILD=$BUILDDIR$BUILDFILE
+FAILBUILDFILE=$RANDOM_failed.txt
+FAILBUILD=$BUILDDIR$FAILBUILDFILE
+ip_regex='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+IPVALID="false";
+if [[ $ip_addr =~ $ip_regex ]]; then
+IPVALID="true";
+fi
+#HTTPD_CONF=/etc/apache2/apache2.conf
+#HTML_FOLDER=/var/www/html
+#OPENCC_FOLDER=/var/www/html/openpbx
+#PHPINI=/etc/php/7.4/apache2/php.ini
+SCRIPT=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT")
+
+
+OSNAME=$(awk -F= '$1=="ID" { print $2 ;}' /etc/os-release)
+DEBIAN_VERSION=$(cat /etc/debian_version)
+DEBIAN_VERSION=${DEBIAN_VERSION%%.*};
+
+DATABASE="n";Node="n";Freeswitch="n";
+
+echo $BUILD;
+clear;
+echo  'For Debian';
+echo $DEBIAN_VERSION
+
+date +"%r" >> $BUILD;
+echo "Intalk Version $INTALK_VERSION";
+echo "Intalk Version $INTALK_VERSION" >> $BUILD;
+echo "Intalk INTALK_CODE_FILE $INTALK_CODE_FILE" >> $BUILD;
+echo "Intalk HTTPD_CONF $HTTPD_CONF" >> $BUILD;
+echo "Intalk OPENCC_FOLDER $OPENCC_FOLDER" >> $BUILD;
+echo "Intalk PHPINI $PHPINI" >> $BUILD;
+
+echo "Intalk INTALK_CODE_FILE $INTALK_CODE_FILE";
+echo "Intalk HTTPD_CONF $HTTPD_CONF";
+echo "Intalk OPENCC_FOLDER $OPENCC_FOLDER";
+echo "Intalk PHPINI $PHPINI";
+
+
+if [  -f install.json ]
+then
+JSON=$(cat install.json)
+#echo $JSON;
+else
+echo "Installation JSON File Not Found";
+exit;
+fi
+
+
+public_domain=$(echo $JSON | jq -r .public_domain);
+
+for row in $(echo "${JSON}" | jq -r '.software | to_entries[] | "\(.value)"'); do
+type=$(echo $row|jq -r .type);
+if [[ $type == "mariadb" || $type == "MariaDB" ]]; then
+imariadb=$row;
+fi
+if [[ $type == "Freeswitch" || $type == "freeswitch" ]]; then
+ifreeswitch=$row;
+fi
+if [[ $type == "node" || $type == "Node" ]]; then
+inode=$row;
+fi
+if [[ $type == "ApachePHP" || $type == "apache" ]]; then
+iapache=$row;
+fi
+
+done
+
+
+
+read -p  "Enter the Public Domain Name (eg. debian.intalk.io): "   domain_name
+echo "Public Domain Name : $domain_name";
+echo "127.0.0.1  $domain_name" >> /etc/hosts
+echo -e "$GREEN
+Intalk
+$RESET";
+
+host=$(echo $imariadb|jq -r .ip);
+if [[ $host == "localhost" || $host == "127.0.0.1" ]]; then
+DATABASE="true";
+echo "Accept Program : Mariadb localhost " >> $BUILD;
+#else
+# if [[ $host =~ $ip_regex ]]; then
+# echo "Accept Program : Mariadb $ip_addr " >> $BUILD;
+# fi
+fi
+
+while true; do
+    read -p "Do you wish to install (MariaDB) program?" yn
+    case $yn in
+        [Yy]* ) 
+
+        printf "on which instance you want to install\ngive ans as opt1"
+
+        i=1
+    for element in "${inst_arr[@]}"; do
+        echo "opt$i: ${!element}" 
+        ((i++))
+    done 
+    touch temp.txt  
+     i=1
+    for element in "${inst_arr[@]}"; do
+        echo "opt$i: ${!element}" >> temp.txt
+        ((i++))
+    done   
+    read -r inst
+    selected_ip=$(cat temp.txt | grep "$inst" | awk -F ":" '{print $2}')
+    if [  "$selected_ip" -ne "$ip_addr" ]; 
+    then
+        jq '(.software[] | select(.type == "MariaDB")).ip = "'"$selected_ip"'"' install.json > temp.json && mv temp.json install.json
+        echo "Accept Program : Mariadb $ip_addr " >> $BUILD;
+        scp  remote_mariadb.sh root@"$selected_ip":/opt
+        scp -r lib64 root@"$selected_ip":/opt
+        ssh -i key root@"$selected_ip" "chmod +x /opt/*;sh common.sh;sh remote_mariadb.sh"
+    fi
+        DATABASE="true"; break;;
+    
+
+        [Nn]* ) echo "Reject Program : DATABASE (By You) " >> $BUILD; break;;
+        * ) echo "Please answer yes or no.";;
+    esac
+done
+
+
+
+
+host=$(echo $ifreeswitch|jq -r .ip);
+if [[ $host == "localhost" || $host == "127.0.0.1" ]]; then
+Freeswitch="true";
+echo "Accept Program : Freeswitch localhost " >> $BUILD;
+fi
+
+while true; do
+    read -p "Do you wish to install (Freeswitch) program?" yn
+    case $yn in
+        [Yy]* ) Freeswitch="true"; break;;
+        [Nn]* ) echo "Reject Program : Freeswitch (By You) " >> $BUILD; break;;
+        * ) echo "Please answer yes or no.";;
+    esac
+done
+
+
+
+
+
+host=$(echo $inode|jq -r .ip);
+if [[ $host == "localhost" || $host == "127.0.0.1" ]]; then
+Node="true";
+echo "Accept Program : Node localhost " >> $BUILD;
+fi
+
+while true; do
+    read -p "Do you wish to install (Node) program?" yn
+    case $yn in
+        [Yy]* ) Node="true"; break;;
+        [Nn]* ) echo "Reject Program : Node (By You) " >> $BUILD; break;;
+       * ) echo "Please answer yes or no.";;
+    esac
+done
+
+
+
+host=$(echo $iapache|jq -r .ip);
+if [[ $host == "localhost" || $host == "127.0.0.1" ]]; then
+Opencc="true";
+echo "Accept Program : Apache localhost " >> $BUILD;
+fi
+while true; do
+    read -p "Do you wish to install (Web App) program?" yn
+    case $yn in
+        [Yy]* ) Opencc="true"; break;;
+        [Nn]* ) echo "Reject Program : Apachephp (By You) " >> $BUILD; break;;
+        * ) echo "Please answer yes or no.";;
+    esac
+done
+
+process=$(echo $JSON | jq -r .run);
+if [ "$process" = "true" ]; then
+    echo "We are happy to inform you that after pressing any key intalk-installer-BOT working in the background installation process, you can relax and take a tea break!";
+
+else
+    read -p "We are happy to inform you that after pressing Enter key intalk-installer-BOT working in the background installation process, you can relax and take a tea break! ......Please Press Enter Key to continue";
+fi
+apt-get -y install openssl
+apt-get -y  install lua-socket
+echo date +"%r";
+mkdir -p /etc/ssl/certs/
+cd /etc/ssl/certs/
+rm -f opencc.key opencc.crt
+#openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout opencc.key -out opencc.crt
+
+
+set -a
+SCRIPTPATH=$SCRIPTPATH
+BUILD=$BUILD
+FAILBUILD=$FAILBUILD
+DATABASE=$DATABASE
+Freeswitch=$Freeswitch
+Node=$Node
+Opencc=$Opencc
+HTTPD_CONF=$HTTPD_CONF
+HTML_FOLDER=$HTML_FOLDER
+OPENCC_FOLDER=$OPENCC_FOLDER
+SCRIPT=$SCRIPT
+SCRIPT_DIR=$SCRIPT_DIR
+PHPINI=$PHPINI
+OSNAME=$OSNAME
+INTALK_CODE_FILE=$INTALK_CODE_FILE
+INTALK_VERSION=$INTALK_VERSION
+set +a
+
+
+chmod +x $SCRIPTPATH/auto*;
+chmod +x $SCRIPTPATH/inc/*.h
+apt-get install -y net-tools
+apt-get install -y shc
+apt-get install -y git
+apt-get install -y vim
+
+
+
+date +"%r" >> $BUILD;echo "Status : Auto Installation Start" >> $BUILD
+date +"%r" >> $BUILD;echo "Status : Auto Installation" >> $BUILD
+echo $INTALK_CODE_FILE
+echo $INTALK_VERSION
+
+
+if [ ! -f "/etc/apt/sources.list.d/php.list"  ]
+then
+apt-get update
+apt-get  -y install  git alsa-lib-devel autoconf automake bison broadvoice-devel bzip2 curl-devel libdb4-devel e2fsprogs-devel erlang flite-devel g722_1-devel gcc-c++ gdbm-devel gnutls-devel ilbc2-devel ldns-devel libcodec2-devel libcurl-devel libedit-devel libidn-devel libjpeg-devel libmemcached-devel libogg-devel libsilk-devel libsndfile-devel libtheora-devel libtiff-devel libtool libuuid-devel libvorbis-devel libxml2-devel lua-devel lzo-devel mongo-c-driver-devel ncurses-devel net-snmp-devel openssl-devel opus-devel pcre-devel perl perl-ExtUtils-Embed pkgconfig portaudio-devel postgresql-devel python-devel python-devel soundtouch-devel speex-devel sqlite-devel unbound-devel unixODBC-devel wget which yasm zlib-devel libshout-devel libmpg123-devel lame-devel
+ apt-get install -y libreadline-dev libhiredis-dev software-properties-common uuid-dev libsndfile-dev libsndfile-dev unixodbc unixodbc-dev odbc-mariadb libmemcached-dev  libvpx-dev expect
+
+apt-get install -y git
+
+
+ apt-get upgrade -y libreadline-dev libhiredis-dev software-properties-common uuid-dev libsndfile-dev libsndfile-dev  unixodbc unixodbc-dev odbc-mariadb libmemcached-dev  libvpx-dev expect
+# add-apt-repository ppa:rock-core/qt4
+#  add-apt-repository ppa:ubuntuhandbook1/ppa
+
+SSLCERt=$(expect -c "
+set timeout 35
+  spawn openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/certs/opencc.key -out /etc/ssl/certs/opencc.crt
+  expect \"Country Name*:\"
+  send \"IN\r\"
+  expect \"State*:\"
+  send \"Mah\r\"
+  expect \"Locality*:\"
+  send \"Pune\r\"
+  expect \"Organization Name*:\"
+  send \"Intalk_Amol\r\"
+  expect \"Organizational Unit*:\"
+  send \"Agami\r\"
+  expect \"Common Name*:\"
+  send \"amol.intalk.io\r\"
+  expect \"Email*:\"
+  send \"amol.patil@agami-tech.om\r\"
+expect eof
+")
+
+
+  apt-get update
+ apt-get install -y  libqt4-dev qt4-qmake qt4-dev-tools
+ apt install zlib1g-dev g++ libjpeg-dev sqlite3 libpng-dev -y
+ rm -rf /etc/apt/sources.list.d/php.list
+
+ rm -rf /etc/apt/sources.list.d/freeswitch.list
+#wget -q https://packages.sury.org/php/apt.gpg -O- | sudo apt-key add -
+#wget -qO - https://packages.sury.org/php/apt.gpg | sudo apt-key add
+wget -O /etc/apt/trusted.gpg.d/php.gpg https://packages.sury.org/php/apt.gpg
+echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list
+apt update
+
+apt install  -y nodejs libsqlite3-dev curl libcurl4-gnutls-dev libpcre3-dev libpcre3 libspeex-dev libspeexdsp-dev libldns-dev libedit-dev python  python-dev
+apt-get -y install erlang libtiff-tools libtiff-dev make
+
+
+ apt update
+echo "deb http://files.freeswitch.org/repo/deb/debian-release/ `lsb_release -sc` main" > /etc/apt/sources.list.d/freeswitch.list
+echo "deb-src http://files.freeswitch.org/repo/deb/debian-release/ `lsb_release -sc` main" >> /etc/apt/sources.list.d/freeswitch.list
+
+apt-get update
+
+# Install dependencies required for the build
+apt-get -y build-dep freeswitch
+
+
+apt-get -y install python3.9-distutils yasm libtool-bin libopus-dev libpq-dev  libavformat-dev and libswscale-dev lua5.3
+apt-get -y install libreadline-dev apt-get install lua5.2 lua5.2-doc liblua5.2-dev uuid-dev
+
+apt-get -y install libqt4-designer libqt4-opengl libqt4-svg libqtgui4 libqtwebkit4
+
+
+ rm -rf /etc/apt/sources.list.d/debian_adding.list
+echo -e "deb http://ftp.de.debian.org/debian buster  main \n deb http://security.debian.org/debian-security stretch/updates main" >> /etc/apt/sources.list.d/debian_adding.list
+
+apt-get install -y  coturn sox
+systemctl enable coturn
+systemctl restart coturn
+
+
+ apt-get update
+ mkdir -p /usr/src/
+
+echo 'ls -l' >> /usr/bin/ll
+chmod +x /usr/bin/ll
+
+ln -s /usr/sbin/adduser /usr/bin/adduser
+
+/usr/sbin/adduser --disabled-password  --quiet --system --home /usr/local/freeswitch --gecos "FreeSWITCH Voice Platform" --ingroup daemon freeswitch
+chown -R freeswitch:daemon /usr/local/freeswitch/
+chmod -R o-rwx /usr/local/freeswitch/
+
+
+ USER_CH="freeswitch"
+if getent passwd $USER_CH > /dev/null 2>&1; then
+    echo "yes the $USER_CH exists"
+else
+    echo "No, the $USER_CH does not exist"
+    adduser --disabled-password  --quiet --system --home /usr/local/freeswitch --gecos "FreeSWITCH Voice Platform" --ingroup daemon freeswitch
+fi
+fi
+
+
+echo -e "\e[32m########################################\n####   DATABASE Software       #########\n########################################"
+if [ $DATABASE = "true" ]
+        then
+
+serviceName="mariadb"
+if systemctl --all --type service | grep -q "$serviceName";then
+    echo "$serviceName exists. skip step"
+else
+apt-get   -y install mariadb-server
+ apt-get -y install unixodbc unixodbc-dev odbcinst
+ apt-get install -y libreadline-dev libhiredis-dev software-properties-common uuid-dev libsndfile-dev libsndfile-dev unixodbc unixodbc-dev odbc-mariadb libmemcached-dev  libvpx-dev
+ apt-get upgrade -y libreadline-dev libhiredis-dev software-properties-common uuid-dev libsndfile-dev libsndfile-dev  unixodbc unixodbc-dev odbc-mariadb libmemcached-dev  libvpx-dev
+
+mysqladmin -u root password 'agami210'
+
+#FreeSwitch Database
+mysql -pagami210 -e "CREATE DATABASE freeswitch"
+mysql -pagami210 -e "GRANT ALL PRIVILEGES ON freeswitch.* TO opencc@localhost IDENTIFIED BY 'opencc'"
+mysql -pagami210 -e "flush privileges"
+mysql -f -pagami210 freeswitch < $SCRIPTPATH/lib64/fs.sql
+fi
+serviceName="redis"
+if systemctl --all --type service | grep -q "$serviceName";then
+    echo "$serviceName exists."
+else
+apt-get install -y redis-server
+
+sed -i '/requirepass /c\requirepass opencc' /etc/redis/redis.conf
+
+systemctl restart redis
+systemctl enable redis
+fi
+
+
+
+        else
+                echo "Reject By USER DATABASE INstall";date +"%r" >> $BUILD;echo "Status :  DATABASE Reject By USER" >> $BUILD
+fi
+
+
+
+
+echo -e "\e[32m########################################\n####   Freeswitch Software       #########\n########################################"
+if [ $Freeswitch = "true" ]
+        then
+serviceName="freeswitch"
+if systemctl --all --type service | grep -q "$serviceName";then
+    echo "$serviceName exists."
+else
+TOKEN="pat_7w1ESBGwWh791eHY1FwZmSVr"
+
+apt-get update && apt-get install -yq gnupg2 wget lsb-release
+wget --http-user=signalwire --http-password=$TOKEN -O /usr/share/keyrings/signalwire-freeswitch-repo.gpg https://freeswitch.signalwire.com/repo/deb/debian-release/signalwire-freeswitch-repo.gpg
+
+echo "machine freeswitch.signalwire.com login signalwire password $TOKEN" > /etc/apt/auth.conf
+chmod 600 /etc/apt/auth.conf
+echo "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ `lsb_release -sc` main" > /etc/apt/sources.list.d/freeswitch.list
+echo "deb-src [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ `lsb_release -sc` main" >> /etc/apt/sources.list.d/freeswitch.list
+apt update
+
+
+
+
+#cp freeswitch*.tgz /usr/src/
+cd /usr/src/
+
+apt-get -y build-dep freeswitch
+
+tar -xvzf freeswitch*.tgz
+
+tar -xvzf freeswitch_1.10.tgz	
+make 
+install 
+
+
+
+cd /usr/src/
+git clone https://github.com/agami-tech/debian1.git
+cd debian1
+./bootstrap.sh -j
+./configure
+make
+make install
+ldconfig
+rm -rf /usr/src/debian1
+
+cd /usr/src/
+git clone https://github.com/agami-tech/debiansip.git
+cd debiansip
+./bootstrap.sh -j
+./configure
+make
+make install
+ldconfig
+rm -rf /usr/src/debiansip
+
+cd /usr/src/
+
+git clone https://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@github.com/agami-tech/freeswitch.git
+cd freeswitch*
+rm -rf .git/
+cd /usr/src/
+cd freeswitch*
+cd cmake-3.7.2/
+./bootstrap --prefix=/usr/local
+make
+make install
+/usr/local/bin/cmake --version
+
+#lua install
+apt-get install -y lua5.2
+cd /usr/src/
+cd freeswitch*
+
+
+cd lua_build/lua-5.3.5
+
+tar -zxf lua-5.3.5.tar.gz
+
+make linux test
+make install
+
+cd /lib/x86_64-linux-gnu/
+sudo ln -s libreadline.so.8 libreadline.so.6
+cd -
+scp  src/liblua.so.5.3.5  /usr/lib64/
+cd -
+cd /usr/lib64/
+if [ -f liblua.so ]; then
+    rm -f liblua.so
+fi
+ln -s liblua.so.5.3.5 liblua.so
+if [ -f liblua.so.5 ]; then
+    rm -f liblua.so.5
+fi
+ln -s liblua.so.5.3.5 liblua.so.5
+if [ -f liblua.so.5.3 ]; then
+    rm -f liblua.so.5.3
+fi
+ln -s liblua.so.5.3.5 liblua.so.5.3
+cd -
+
+
+#cp -rf   /usr/local/include/*.h /usr/src/freeswitch/src/mod/languages/mod_lua/
+
+cd /usr/lib/x86_64-linux-gnu/
+if [ -f liblua5.3.so ]; then
+echo "test"
+#sudo ln -s /usr/lib/x86_64-linux-gnu/liblua5.3.so /usr/lib/x86_64-linux-gnu/liblua.so
+fi
+if [ -f liblua5.3.so.0 ]; then
+echo "test"
+#sudo ln -s /usr/lib/x86_64-linux-gnu/liblua5.3.so.0 /usr/lib/x86_64-linux-gnu/liblua.so
+fi
+
+
+apt-get install -y libreadline-dev
+apt-get install -y lua5.2 lua5.2-doc liblua5.2-dev
+rm -rf /usr/lib/x86_64-linux-gnu/liblua.so
+cp -rf /usr/include/lua5.2/* /usr/src/freeswitch/src/mod/languages/mod_lua/
+sudo ln -s /usr/lib/x86_64-linux-gnu/liblua5.3.so.0 /usr/lib/x86_64-linux-gnu/liblua.so
+
+
+#lua install
+
+cd /usr/src/
+cd freeswitch*
+cd libks
+cmake .
+make
+make install
+
+cd /usr/src/
+cd freeswitch*
+cd signalwire-c
+cmake .
+make
+make install
+
+
+cd /usr/src/
+cd freeswitch*
+
+#cd /usr/src/
+#git clone https://github.com/signalwire/freeswitch.git -bv1.10 freeswitch
+#cd freeswitch
+
+make clean
+./bootstrap.sh -j
+./configure --enable-portable-binary \
+            --with-gnu-ld --with-python --with-erlang --with-openssl \
+            --enable-core-odbc-support --enable-zrtp \
+            --enable-static-v8 --disable-parallel-build-v8
+make
+make install
+make cd-sounds-install
+make cd-moh-install
+cd -
+#cd /usr/local/src/freeswitch/src/mod/codecs/mod_bcg729
+#make
+#make install
+cd -
+cd /usr/src/freeswitch/libs/esl/
+make perlmod-install
+
+#make mod_lua-clean
+#make mod_lua-install
+
+#Replace odbc-dsn parameter value of each module
+#replace '<!--<param name="odbc-dsn" value="$${dsn}"/>-->' '<param name="odbc-dsn" value="odbc://freeswitch:root:agami210"/>' -- /usr/local/freeswitch/conf/autoload_configs/db.conf.xml
+#replace '<param name="debug-presence" value="0"/>' '<param name="debug-presence" value="0"/><param name="odbc-dsn" value="odbc://freeswitch:root:agami210"/>' -- /usr/local/freeswitch/conf/autoload_configs/sofia.conf.xml
+#replace '<param name="rtp-enable-zrtp" value="true"/>' '<param name="rtp-enable-zrtp" value="true"/><param name="core-db-dsn" value="odbc://freeswitch:root:agami210" />' -- /usr/local/freeswitch/conf/autoload_configs/switch.conf.xml
+#replace '<!--<param name="odbc-dsn" value="$${dsn}"/>-->' '<param name="odbc-dsn" value="odbc://freeswitch:root:agami210"/>' -- /usr/local/freeswitch/conf/autoload_configs/voicemail.conf.xml
+
+#replace '<!--<param name="odbc-dsn" value="dsn:user:pass"/>-->' '<param name="odbc-dsn" value="odbc://freeswitch:root:agami210"/>' -- /usr/local/freeswitch/conf/autoload_configs/db.conf.xml
+#replace '<param name="rtp-enable-zrtp" value="false"/>' '<param name="rtp-enable-zrtp" value="true"/><param name="core-db-dsn" value="odbc://freeswitch:root:agami210" />' -- /usr/local/freeswitch/conf/autoload_configs/switch.conf.xml
+#replace '<!--<param name="odbc-dsn" value="dsn:user:pass"/>-->' '<param name="odbc-dsn" value="odbc://freeswitch:root:agami210"/>' -- /usr/local/freeswitch/conf/autoload_configs/voicemail.conf.xml
+
+
+
+#replace '<!--<param name="odbc-dsn" value="dsn:user:pass"/>-->' '<param name="odbc-dsn" value="odbc://freeswitch:root:agami210"/>' -- /usr/local/freeswitch/conf/autoload_configs/db.conf.xml
+
+
+cd $SCRIPTPATH
+#cp -rf freeswitch.service /lib/systemd/system/freeswitch.service
+#cp -rf odbc /etc/odbc.ini
+
+
+
+cd /usr/src/
+cd freeswitch*
+#cd $SCRIPTPATH
+cp -rf hiredis.conf.xml /usr/local/freeswitch/conf/autoload_configs/
+cp -rf lua.conf.xml /usr/local/freeswitch/conf/autoload_configs/
+cp -rf callcenter.conf.xml /usr/local/freeswitch/conf/autoload_configs/
+cp -rf auto_load.conf /usr/local/freeswitch/conf/autoload_configs/modules.conf.xml
+
+
+cp -rf  odbc.ini /etc/odbc.ini
+cp -rf freeswitch.service  /lib/systemd/system/freeswitch.service
+
+cd /usr/src/
+cd freeswitch*
+#systemctl daemon-reload
+#chmod +x /etc/init.d/freeswitch
+#update-rc.d freeswitch defaults
+
+
+#sed -i 's/http:\/\/127.0.0.1/http:\/\/127.0.0.1\/openpbx/g' /usr/local/freeswitch/conf/autoload_configs/xml_cdr.conf.xml
+sed -i 's/http:\/\/127.0.0.1/http:\/\/127.0.0.1\/openpbx/g' /usr/local/freeswitch/conf/autoload_configs/*
+
+chmod 750 /lib/systemd/system/freeswitch.service
+ln -s /lib/systemd/system/freeswitch.service /etc/systemd/system/freeswitch.service
+systemctl daemon-reload
+systemctl enable freeswitch.service
+#systemctl enable freeswitch
+systemctl restart freeswitch.service
+
+ln -s /usr/local/freeswitch/bin/freeswitch /usr/bin/freeswitch
+ln -s /usr/local/freeswitch/bin/fs_cli /usr/bin/fs_cli
+chown -R freeswitch:daemon /usr/local/freeswitch/
+chmod -R ug=rwX,o= /usr/local/freeswitch/
+chmod -R u=rwx,g=rx /usr/local/freeswitch/bin/
+chown freeswitch:daemon /usr/local/freeswitch -R
+chmod g+w /usr/local/freeswitch -R
+
+fi
+
+
+        else
+                echo "Reject By USER Freeswitch INstall";date +"%r" >> $BUILD;echo "Status :  Freeswitch Reject By USER" >> $BUILD
+fi
+
+echo -e "\e[32m########################################\n####   Node Software       #########\n########################################"
+if [ $Node = "true" ]
+        then
+serviceName="node"
+if systemctl --all --type service | grep -q "$serviceName";then
+    echo "$serviceName exists."
+else
+
+apt-get -y install curl
+ curl -fsSL https://deb.nodesource.com/setup_12.x | sudo -E bash -
+ apt-get -y install nodejs
+ npm i -g pm2
+  pm2 startup
+
+
+#nodejs script updation for IP
+NODEJS_FILE=$OPENCC_FOLDER/nodejs/wsssl_opencc.js
+UCP_NODEJS_FILE=$OPENCC_FOLDER/ucp_node/wsssl.js
+cd $OPENCC_FOLDER/nodejs
+dos2unix *.js
+cd -
+if [ -f $OPENCC_FOLDER/nodejs/wsssl_sunil.js ]; then
+    mv $OPENCC_FOLDER/nodejs/wsssl_sunil.js $NODEJS_FILE
+fi
+
+cat <<EOF >opencc_nodejs.service
+[Unit]
+Description=OpenCC NodeJS Module
+[Service]
+ExecStart=/usr/bin/node $NODEJS_FILE
+Restart=always
+RestartSec=30
+User=freeswitch
+Group=daemon
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=NODE_ENV=production
+WorkingDirectory=$OPENCC_FOLDER/nodejs
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat <<EOF >ucp_nodejs.service
+[Unit]
+Description=UCP NodeJS Module
+[Service]
+ExecStart=/usr/bin/node $UCP_NODEJS_FILE
+Restart=always
+RestartSec=30
+User=freeswitch
+Group=daemon
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=NODE_ENV=production
+WorkingDirectory=$OPENCC_FOLDER/ucp_node
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+mv opencc_nodejs.service /etc/systemd/system
+#systemctl enable opencc_nodejs
+service httpd restart
+
+cd /usr/src/
+cd freeswitch*
+rm -rf /etc/systemd/system/opencc_nodejs.service
+cp -rf inc/opencc_node /etc/systemd/system/opencc_nodejs.service
+cp -rf inc/chatbox_node /etc/systemd/system/chatbox_nodejs.service
+
+systemctl daemon-reload
+systemctl enable opencc_nodejs
+
+
+fi
+
+        else
+                echo "Reject By USER Node INstall";date +"%r" >> $BUILD;echo "Status :  Node Reject By USER" >> $BUILD
+fi
+
+echo -e "\e[32m########################################\n####   Opencc Software       #########\n########################################"
+if [ $Opencc = "true" ]
+        then
+
+serviceName="apache2"
+if systemctl --all --type service | grep -q "$serviceName";then
+    echo "$serviceName exists."
+else
+
+apt-get  -y install apache2
+
+
+apt-get install -y php7.4 libapache2-mod-php7.4
+apt install  -y dos2unix net-tools vim
+apt install  -y memcached libmemcached-tools
+systemctl restart memcached
+systemctl enable memcached
+
+
+apt-get install -y php7.4-mysql
+apt-get install -y php7.4-xml
+apt-get install -y php7.4-mcrypt
+apt-get install -y php7.4-soap
+apt install  -y php7.4-memcache
+apt install  -y php7.4-devel
+apt-get install -y php7.4-gd
+apt-get install -y php7.4-imap
+apt-get install -y php7.4-ldap
+apt-get install -y wkhtmltopdf Xvfb
+apt-get install -y php7.4-redis
+apt-get install -y php7.4-curl
+
+ln -s /usr/sbin/a2enmod /usr/bin/a2enmod
+a2enmod php7.4
+a2enmod rewrite
+a2enmod ssl
+
+sed -i.bak 's/\[PHP]/&\ndate.timezone=Asia\/Kolkata/' $PHPINI
+cd $SCRIPTPATH;
+cd /usr/src/freeswitch
+cp -rf default_ssl.conf /etc/apache2/sites-enabled/
+sed -i '11 b; s/AllowOverride None\b/AllowOverride All/' /etc/apache2/apache2.conf
+sed -i 's/^User.*/User freeswitch/' /etc/apache2/apache2.conf
+sed -i 's/^Group.*/Group daemon/' /etc/apache2/apache2.conf
+sed -i "s/amol_debian.intalk.io/$domain_name/g" /root/default_ssl.conf
+
+
+systemctl enable apache2
+systemctl restart apache2
+fi
+
+
+LINK_OR_DIR=/var/www/html/openpbx
+
+DIR_O="true"
+if [[ ! -d "$LINK_OR_DIR" && ! -L "$LINK_OR_DIR" ]]
+then
+        DIR_O="false";
+fi
+echo "Status OPENPBX : ".$DIR_O
+
+if [ $DIR_O = "false" ]
+then
+cd $SCRIPTPATH
+date_suffix=`date +%Y%b%d`
+if [ -d $OPENCC_FOLDER ]; then
+    mv $OPENCC_FOLDER $OPENCC_FOLDER""_$date_suffix -rf
+fi
+#get OpenCC code
+if [ -f "$INTALK_CODE_FILE""_v""$INTALK_VERSION"".tgz" ]; then
+    tar -xzf $INTALK_CODE_FILE""_v""$INTALK_VERSION"".tgz
+    tar -xvf $INTALK_CODE_FILE""_v""$INTALK_VERSION"".tgz
+    mv OpenCC $OPENCC_FOLDER -f
+    echo "Found $INTALK_CODE_FILE $INTALK_VERSION";
+
+else
+    if [ -f "$INTALK_CODE_FILE""_v"*".tgz" ]; then
+    echo "Found $INTALK_CODE_FILE ...";
+    tar -xzf "$INTALK_CODE_FILE""_v"*".tgz"
+    tar -xvf "$INTALK_CODE_FILE""_v"*".tgz"
+    mv OpenCC $OPENCC_FOLDER -f    
+    else
+    echo "Not found"
+    cd $HTML_FOLDER
+    git clone http://159.65.153.10/PHPProjects/OpenCC.git
+    mv OpenCC openpbx -f
+    cd -
+    fi
+fi
+
+chown freeswitch:daemon  /var/www/html/openpbx
+chown freeswitch:daemon -R /var/www/html/openpbx
+chown freeswitch:daemon -R $OPENCC_FOLDER
+
+if [ -f /etc/ssl/certs/opencc.crt ]; then
+  rm -f $OPENCC_FOLDER/nodejs/opencc.crt $OPENCC_FOLDER/nodejs/opencc.key
+  cp /etc/ssl/certs/opencc.* $OPENCC_FOLDER/nodejs/
+  mkdir /usr/local/freeswitch/certs >>/dev/null
+  cp /etc/ssl/certs/opencc.* /usr/local/freeswitch/certs/
+  cd /usr/local/freeswitch/certs/
+  echo '' > wss.pem && cat opencc.crt >> wss.pem && cat opencc.key >> wss.pem
+  chown freeswitch.daemon wss.pem
+  cd -
+fi
+mv $SCRIPTPATH/cert.tar.gz /
+cd /
+tar -xvf /cert.tar.gz
+cd -
+#create file certificate  tar cvf cert.tar.gz etc/ssl/certs/opencc-ca-bundle.crt etc/ssl/certs/opencc.crt /etc/ssl/certs/opencc.key /var/www/html/openpbx/nodejs/opencc.crt /var/www/html/openpbx/nodejs/opencc.key /usr/local/freeswitch/certs/wss.pem /usr/local/freeswitch/certs/*
+
+
+if [ -f intalk_db.sql ]; then
+    scp intalk_db.sql $OPENCC_FOLDER/DB_Schema_Changes/
+fi
+if [ -f intalk_tiss_db.sql ]; then
+    scp intalk_tiss_db.sql $OPENCC_FOLDER/DB_Schema_Changes/
+fi
+if [ -f intalk_appointment_db.sql ]; then
+    scp intalk_appointment_db.sql $OPENCC_FOLDER/DB_Schema_Changes/
+fi
+
+cd $OPENCC_FOLDER
+rm -f core/install/*.text
+rm -f resources/config.php
+rm -f tools
+cd -
+fi
+
+
+        else
+                echo "Reject By USER Opencc INstall";date +"%r" >> $BUILD;echo "Status :  Opencc Reject By USER" >> $BUILD
+fi
+
+if [ ! -f /usr/local/freeswitch/scripts/amol.lua ]; then
+mv /usr/local/freeswitch/scripts /usr/local/freeswitch/scripts_bk
+ln -s /var/www/html/openpbx/scripts  /usr/local/freeswitch/scripts
+echo "/usr/local/freeswitch/scripts" >> /usr/local/freeswitch/scripts/amol.lua
+systemctl stop freeswitch
+systemctl start freeswitch
+fi
+chown freeswitch:daemon -R /var/www/html/openpbx
+chown freeswitch:daemon -R /usr/local/freeswitch
+
+cat <<EOF >/var/www/html/index.html
+<html>
+<head>
+<title>Page Moved</title>
+</head>
+<body>
+This page has moved. Click <a id="url" href="#">here</a> to go to the new page.
+<script>
+var x = location.href.replace(/https?:\/\//i, "")
+document.getElementById("url").href="https://"+x;
+window.location.replace("https://"+x);
+</script>
+</body>
+</html>
+EOF
+
+
+cd /usr/src/freeswitch
+rm -rf /etc/systemd/system/opencc_nodejs.service
+cp -rf inc/opencc_node /etc/systemd/system/opencc_nodejs.service
+cp -rf inc/chatbox_node /etc/systemd/system/chatbox_nodejs.service
+systemctl daemon-reload
+systemctl enable opencc_nodejs
+
+apt-get install  -y lua-socket sngrep
+
+sed -i 's/http:\/\/127.0.0.1\/hangup_data.php/http:\/\/127.0.0.1\/openpbx\/hangup_data.php/g' /usr/local/freeswitch/conf/autoload_configs/*
+sed -i 's/http:\/\/127.0.0.1\/app/http:\/\/127.0.0.1\/openpbx\/app/g' /usr/local/freeswitch/conf/autoload_configs/*
+
+cat <<EOF >/var/www/html/.htaccess
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+EOF
+systemctl restart apache2;
+chown freeswitch:daemon -R /var/www/html/.htaccess;
+chown freeswitch:daemon -R /var/www/html/openpbx;
+date +"%r" >> $BUILD; echo "Status : Auto Installation Done....." >> $BUILD
+date +"%r" >> $BUILD; echo $INTALK_VERSION   >> $BUILD;
+echo "---- Done" >> $BUILD;
+echo date +"%r";

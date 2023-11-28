@@ -1,0 +1,48 @@
+for element in "${inst_arr[@]}"; do
+
+    if do_connection root@"$element"; then
+
+        if [ "$ip_addr" != "$element" ]; then
+            echo "YOU HAVE SUCCESSFULLY ESTABLISHED THE CONNECTION WITH $element"
+            scp common.sh root@"$element":/opt
+            ssh -i $key root@"$element" "common.sh"
+
+            read -pr "do you want to install database service on $element" yn
+
+            for service in app_service db_service media_service node_service; do
+                read -pr "Do you want to install $service on $element? (y/n): " yn
+                case $yn in
+                [Yy]*)
+                    "$service" "$element" && echo "$service is starting to installed"
+                    log "$service is starting to installed"
+                    ;;
+                [Nn]*)
+                    log "User doesn't want to install $service on this $element"
+                    ;;
+                *)
+                    echo "Please give an appropriate answer."
+                    ;;
+                esac
+            done
+
+        else
+            for service in app_instance.sh db_instance.sh media_instance.sh node_instance.sh; do
+                read -pr "Do you want to install $service on $element? (y/n): " yn
+                case $yn in
+                [Yy]*)
+                    sh $service
+                    log "$service is starting to installed"
+                    ;;
+                [Nn]*)
+                    log "User doesn't want to install $service on this $element"
+                    ;;
+                *)
+                    echo "Please give an appropriate answer."
+                    ;;
+                esac
+            done
+        fi
+    else
+        echo "THE CONNECTION IS NOT ESTABLISHED WITH $element instance"
+    fi
+done

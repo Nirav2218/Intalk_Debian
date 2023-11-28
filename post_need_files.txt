@@ -1,0 +1,13 @@
+intalk_appointment_db.sql
+intalk_tiss_db.sql
+intalk_helpinbox_db.sql
+intalk_icici_db.sql
+intalk_db.sql
+migration
+migration2.sql
+migration3.sql
+intalk.io_extra_dialplans.sql
+lualib64_5.3.tgz
+lualib_5.3.tgz
+version.csv
+whole openpbx

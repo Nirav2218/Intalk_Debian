@@ -1,0 +1,2 @@
+hello,
+As required I have installed different services on different server instances. and each service is able to run. but after generating the license I  ran a post-installation script. which may cause some unwanted changes in the database so I am not able to log in as a user. so I want to do again whole installation process. I am requesting for the same instance.

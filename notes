@@ -1,0 +1,8 @@
+wget adminer.org/latest.php
+./dbdiff server1.sos_db:server2.opencc
+
+scp opencc.crt opencc.key /var/www/html/openpbx/nodejs
+scp opencc.crt opencc.key /etc/ssl/certs/
+scp opencc.crt opencc.key opencc-ca-bundle.crt /etc/ssl/certs/
+scp wss.pem /usr/local/freeswitch/certs/
+scp opencc.crt opencc.key /etc/kamailio/

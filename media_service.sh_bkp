@@ -1,0 +1,883 @@
+#! /bin/bash
+
+# backup an existing server stat
+# tar czf /tmp/server_backup.tar.gz /
+
+# restore the privious server stat
+#restore_server() {
+#   tar xzf /tmp/server_backup.tar.gz -C /
+# }
+apt install cmake -y
+apt install make -y
+
+result=$(grep -i "ERROR" /var/log/common.log)
+if [ -n "$result" ]; then
+  echo "Only support debian 11....Please Install Debian 11.***  version OS in Server"
+  exit 1
+fi
+apt-get install -y net-tools
+apt-get install -y shc
+apt-get install -y vim
+if ! command -v git &>/dev/null; then
+  apt-get install -y git
+else
+  echo "Git is already installed."
+fi
+# here we need tar file of freeswitch
+SCRIPTPATH="$(cd "$(dirname "$0")" && pwd)"
+LOG_FILE="/var/log/Freeswitch_install_script.log"
+
+# check directories and make that
+OPENCC_FOLDER=/var/www/html/openpbx
+RECORDINGS=$OPENCC_FOLDER/recordings
+SCRIPTS=$OPENCC_FOLDER/scripts
+if [ ! -d $OPENCC_FOLDER ]; then
+  mkdir -p $OPENCC_FOLDER
+fi
+
+if [ ! -d "$RECORDINGS" ]; then
+  mkdir -p "$RECORDINGS"
+fi
+
+if [ ! -d "$SCRIPTS" ]; then
+  scp -r /root/scripts $OPENCC_FOLDER
+fi
+
+serviceName="freeswitch"
+
+# Function to log messages
+log() {
+  local message="$1"
+  echo "$(date +'%Y-%m-%d %H:%M:%S') - $message" >>"$LOG_FILE"
+}
+
+if systemctl --all --type service | grep -q "$serviceName"; then
+  echo "$serviceName exists."
+else
+  # Set your SignalWire token
+  TOKEN="pat_7w1ESBGwWh791eHY1FwZmSVr"
+
+  # Update the package repository and install required packages
+  apt-get update && apt-get install -yq gnupg2 wget lsb-release
+
+  # Download SignalWire repository GPG key
+  wget --http-user=signalwire --http-password="$TOKEN" -O /usr/share/keyrings/signalwire-freeswitch-repo.gpg https://freeswitch.signalwire.com/repo/deb/debian-release/signalwire-freeswitch-repo.gpg
+
+  # Configure authentication for SignalWire repository
+  echo "machine freeswitch.signalwire.com login signalwire password $TOKEN" >/etc/apt/auth.conf
+  chmod 600 /etc/apt/auth.conf
+
+  # Add SignalWire repository to sources list
+  echo "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ $(lsb_release -sc) main" >/etc/apt/sources.list.d/freeswitch.list
+  echo "deb-src [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ $(lsb_release -sc) main" >>/etc/apt/sources.list.d/freeswitch.list
+
+  # Update package information
+  apt update
+
+  # Change directory to /usr/src/
+  cd /usr/src/ || {
+    log "Directory not found"
+    exit 1
+  }
+
+  # Build dependencies and extract FreeSWITCH
+  apt-get -y build-dep freeswitch
+  found_file=$(find /root -type f -name "freeswitch.tgz")
+  tar -xvzf "$found_file"
+  #scp -r /usr/src/usr/local/src/* /usr/src/
+  #mv /usr/local/src/freeswitch /usr/src/freeswitch
+  make
+  install
+
+  #create user and give ownership
+  if grep -q daemon /etc/group; then
+    echo "group exists"
+  else
+    echo "group does not exist"
+    groupadd daemon
+  fi
+  if [ ! -e /usr/bin/adduser ]; then
+    ln -s /usr/sbin/adduser /usr/bin/adduser
+    echo "Symbolic link '/usr/bin/adduser' created."
+  else
+    echo "Symbolic link '/usr/bin/adduser' already exists."
+  fi
+  if id "freeswitch" &>/dev/null; then
+    echo "User 'freeswitch' already exists."
+  else
+    /usr/sbin/adduser --disabled-password --quiet --system --home /usr/local/freeswitch --gecos "FreeSWITCH Voice Platform" --ingroup daemon freeswitch
+    echo "User 'freeswitch' created."
+  fi
+  chown freeswitch:daemon -R /usr/local/freeswitch
+
+  # Define the repository URL
+  REPO_URL="https://github.com/agami-tech/debian1.git"
+  REPO_DIR="/usr/src/debian1"
+
+  # Check if the repository directory exists, if not, clone it
+  if [ ! -d "$REPO_DIR" ]; then
+    echo "Cloning $REPO_URL..."
+    cd /usr/src || log "directory not found"
+    echo " in /usr/src  now we clone debian1"
+    git clone https://github.com/agami-tech/debian1.git || {
+      log "Failed to clone the repository"
+      exit 1
+    }
+  fi
+
+  # Change to the repository directory
+  cd "$REPO_DIR" || {
+    log "Failed to change directory to $REPO_DIR"
+
+    exit 1
+  }
+
+  # Build and install
+  ./bootstrap.sh -j || {
+    log "Failed to run bootstrap.sh"
+
+    exit 1
+  }
+  ./configure || {
+    log "Failed to run configure"
+
+    exit 1
+  }
+  make || {
+    log "Failed to run make"
+
+    exit 1
+  }
+  make install || {
+    log "Failed to run make install"
+
+    exit 1
+  }
+  ldconfig || {
+    log "Failed to run ldconfig"
+
+    exit 1
+  }
+
+  # Cleanup
+  rm -rf "$REPO_DIR"
+
+  # Define the repository URL
+  REPO_URL="https://github.com/agami-tech/debiansip.git"
+  REPO_DIR="/usr/src/debiansip"
+
+  # Check if the repository directory exists, if not, clone it
+  if [ ! -d "$REPO_DIR" ]; then
+    echo "Cloning $REPO_URL..."
+    cd /usr/src || echo "directory not found"
+    echo " in /usr/src  now we clone debiansip"
+    git clone "$REPO_URL" || {
+      echo "Failed to clone the repository"
+      exit 1
+    }
+    echo "$(pwd)"
+
+  fi
+
+  # Change to the repository directory
+  cd "$REPO_DIR" || {
+    echo "Failed to change directory to $REPO_DIR"
+    log "Failed to change directory to $REPO_DIR"
+
+    exit 1
+  }
+
+  # Build and install
+  ./bootstrap.sh -j || {
+    log "Failed to run bootstrap.sh"
+
+    exit 1
+  }
+  ./configure || {
+    log "Failed to run configure"
+
+    exit 1
+  }
+  make || {
+    log "Failed to run make"
+
+    exit 1
+  }
+  make install || {
+    log "Failed to run make install"
+
+    exit 1
+  }
+  ldconfig || {
+    log "Failed to run ldconfig"
+
+    exit 1
+  }
+
+  # Cleanup
+  rm -rf "$REPO_DIR"
+
+  SRC_DIR="/usr/src"
+  REPO_URL="https://github.com/agami-tech/freeswitch.git"
+  REPO_DIR="${SRC_DIR}/freeswitch"
+
+  # Change to the source directory
+  cd "$SRC_DIR" || {
+    log "Failed to change directory to $SRC_DIR"
+    exit 1
+  }
+
+  # Check if the repository directory exists, if not, clone it
+  if [ ! -d "$REPO_DIR" ]; then
+    echo "Cloning $REPO_URL..."
+
+    git clone https://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@github.com/agami-tech/freeswitch.git
+    cd freeswitch
+    rm -rf .git/
+    cd /usr/src/
+    cd freeswitch
+    cd cmake-3.7.2/
+    ./bootstrap --prefix=/usr/local
+    make
+    make install
+    /usr/local/bin/cmake --version
+
+  fi
+
+  # # Change to the repository directory
+  # cd "$REPO_DIR" || {
+  #   log "Failed to change directory to $REPO_DIR"
+  #   exit 1
+  # }
+
+  # # Remove the .git directory
+  # rm -rf .git || {
+  #   log "Failed to remove the .git directory"
+
+  #   exit 1
+  # }
+
+  # # Change to the cmake directory
+  # cd cmake-3.7.2/ || {
+  #   log "Failed to change directory to cmake-3.7.2"
+
+  #   exit 1
+  # }
+
+  # # Bootstrap and install cmake
+  # ./bootstrap --prefix=/usr/local || {
+  #   log "Failed to run cmake bootstrap"
+
+  #   exit 1
+  # }
+  # make || {
+  #   log "Failed to run make for cmake"
+
+  #   exit 1
+  # }
+  # make install || {
+  #   log "Failed to install cmake"
+
+  #   exit 1
+  # }
+
+  # # Check the cmake version
+  # /usr/local/bin/cmake --version || {
+  #   log "Failed to check cmake version"
+
+  #   exit 1
+  # }
+
+  # echo "Installation of cmake completed successfully."
+
+  # Install Lua 5.2
+  apt-get install -y lua5.2 || {
+    log "Failed to install Lua 5.2"
+
+    exit 1
+  }
+
+  # Change to the FreeSWITCH source directory
+  cd /usr/src/freeswitch || {
+    log "Failed to change directory to FreeSWITCH source"
+
+    exit 1
+  }
+
+  # Change to the Lua source directory
+  cd lua_build/lua-5.3.5 || {
+    log "Failed to change directory to Lua source"
+
+    exit 1
+  }
+
+  # Extract Lua source code
+  tar -zxf lua-5.3.5.tar.gz || {
+    log "Failed to extract Lua source code"
+
+    #exit 1
+  }
+
+  # Build and install Lua
+  make linux test || {
+    log "Failed to build Lua"
+
+    exit 1
+  }
+  make install || {
+    log "Failed to install Lua"
+
+    exit 1
+  }
+
+  echo "Lua installation completed successfully."
+
+  ### ahiya thi baki
+
+  LIB_DIR="/lib/x86_64-linux-gnu"
+  USR_LIB_DIR="/usr/lib64"
+
+  # Check if the library directory exists
+  if [ ! -d "$LIB_DIR" ]; then
+    echo "Library directory not found: $LIB_DIR"
+
+    exit 1
+  fi
+
+  # Change to the library directory
+  cd "$LIB_DIR" || {
+    log "Failed to change directory to $LIB_DIR"
+
+    exit 1
+  }
+
+  # Create symbolic links for libreadline.so.6
+  rm -f libreadline.so.6 # Remove the existing symbolic link
+
+  ln -s libreadline.so.8 libreadline.so.6 || {
+    log "Failed to create symbolic link for libreadline.so.6"
+
+    exit 1
+  }
+
+  # Return to the previous directory
+  cd - || {
+    log "Failed to change back to the previous directory"
+
+    exit 1
+  }
+
+  # Copy liblua.so.5.3.5 to /usr/lib64/
+  cp src/liblua.so.5.3.5 "$USR_LIB_DIR/" || {
+    log "Failed to copy liblua.so.5.3.5 to $USR_LIB_DIR"
+
+    exit 1
+  }
+
+  # Change to /usr/lib64/ directory
+  cd "$USR_LIB_DIR" || {
+    log "Failed to change directory to $USR_LIB_DIR"
+
+    exit 1
+  }
+
+  # Create symbolic links for liblua.so, liblua.so.5, and liblua.so.5.3
+  for lib_file in liblua.so liblua.so.5 liblua.so.5.3; do
+    if [ -f "$lib_file" ]; then
+      rm -f "$lib_file" || {
+        log "Failed to remove existing $lib_file"
+
+        exit 1
+      }
+    fi
+    ln -s liblua.so.5.3.5 "$lib_file" || {
+      log "Failed to create symbolic link for $lib_file"
+
+      exit 1
+    }
+  done
+
+  echo "Library management completed successfully."
+
+  # Define library paths
+  LIB_DIR="/usr/lib/x86_64-linux-gnu"
+
+  # Check if the library directory exists
+  if [ ! -d "$LIB_DIR" ]; then
+    echo "Library directory not found: $LIB_DIR"
+
+    exit 1
+  fi
+
+  # Change to the library directory
+  cd "$LIB_DIR" || {
+    log "Failed to change directory to $LIB_DIR"
+
+    exit 1
+  }
+
+  # Create symbolic links for liblua.so if liblua5.3.so or liblua5.3.so.0 exists
+  if [ -f liblua5.3.so ]; then
+    echo "Creating symbolic link for liblua.so"
+    rm -f liblua.so
+    ln -s liblua5.3.so liblua.so || {
+      log "Failed to create symbolic link for liblua.so"
+
+      exit 1
+    }
+  fi
+
+  if [ -f liblua5.3.so.0 ]; then
+    echo "Creating symbolic link for liblua.so"
+    rm -f liblua.so
+    ln -s liblua5.3.so.0 liblua.so || {
+      log "Failed to create symbolic link for liblua.so"
+
+      exit 1
+    }
+  fi
+
+  echo "Library management completed successfully."
+
+  # Install libreadline-dev
+  apt-get install -y libreadline-dev || {
+    log "Failed to install libreadline-dev"
+
+    exit 1
+  }
+
+  # Install Lua 5.2 and related packages
+  apt-get install -y lua5.2 lua5.2-doc liblua5.2-dev || {
+    log "Failed to install Lua 5.2 and related packages"
+
+    exit 1
+  }
+
+  # Remove the existing liblua.so if it exists
+  if [ -f /usr/lib/x86_64-linux-gnu/liblua.so ]; then
+    rm -f /usr/lib/x86_64-linux-gnu/liblua.so || {
+      log "Failed to remove existing /usr/lib/x86_64-linux-gnu/liblua.so"
+
+      exit 1
+    }
+  fi
+
+  # Copy Lua 5.2 header files to FreeSWITCH source directory
+  cp -rf /usr/include/lua5.2/* /usr/src/freeswitch/src/mod/languages/mod_lua/ || {
+    log "Failed to copy Lua 5.2 header files to FreeSWITCH source directory"
+
+    exit 1
+  }
+
+  # Create a symbolic link to liblua5.3.so.0 as liblua.so
+  rm -f /usr/lib/x86_64-linux-gnu/liblua.so
+  ln -s /usr/lib/x86_64-linux-gnu/liblua5.3.so.0 /usr/lib/x86_64-linux-gnu/liblua.so || {
+    log "Failed to create symbolic link for liblua.so"
+
+    exit 1
+  }
+
+  echo "Lua installation and configuration completed successfully."
+
+  # Define source directories
+  # SRC_DIR="/usr/src"
+  # FREESWITCH_DIR="$SRC_DIR/freeswitch"
+  # LIBKS_DIR="$FREESWITCH_DIR/libks"
+  # SIGNALWIRE_C_DIR="$FREESWITCH_DIR/signalwire-c"
+
+  # # Function to check and change directory with error handling
+  # check_and_cd() {
+  #   local dir="$1"
+  #   cd "$dir" || {
+  #     log "Failed to change directory to $dir"
+
+  #     exit 1
+  #   }
+  # }
+
+  # # Change to the FreeSWITCH source directory
+  # check_and_cd "$SRC_DIR"
+
+  # # Change to the FreeSWITCH source directory
+  # check_and_cd "$FREESWITCH_DIR"
+
+  # # Change to the libks directory
+  # check_and_cd "$LIBKS_DIR"
+
+  # # Build and install libks
+  # cmake . || {
+  #   log "Failed to run cmake for libks"
+
+  #   exit 1
+  # }
+  # make || {
+  #   log "Failed to build libks"
+
+  #   exit 1
+  # }
+  # make install || {
+  #   log "Failed to install libks"
+
+  #   exit 1
+  # }
+
+  # # Return to the FreeSWITCH source directory
+  # check_and_cd "$FREESWITCH_DIR"
+
+  # # Change to the signalwire-c directory
+  # check_and_cd "$SIGNALWIRE_C_DIR"
+
+  # # if [ -e /usr/src/git/CMakeCache.txt ];
+  # # then
+  # #   rm /usr/src/git/CMakeCache.txt
+  # # fi
+
+  # # # Build and install signalwire-c
+  # rm -f /usr/local/bin/cmake
+  # ln -s /usr/bin/cmake /usr/local/bin/cmake
+
+  # cmake . || {
+  #   log "Failed to run cmake for signalwire-c"
+
+  #   exit 1
+  # }
+  # make || {
+  #   log "Failed to build signalwire-c"
+
+  #   exit 1
+  # }
+  # make install || {
+  #   log "Failed to install signalwire-c"
+
+  #   exit 1
+  # }
+
+  # echo "Build and installation completed successfully."
+
+
+cd /usr/src/
+cd freeswitch*
+cd libks
+cmake .
+make
+make install
+
+cd /usr/src/
+cd freeswitch*
+cd signalwire-c
+cmake .
+make
+make install
+
+
+
+  # # Define variables
+   SRC_DIR="/usr/src"
+  FREESWITCH_DIR="$SRC_DIR/freeswitch"
+
+  # # Function to check and change directory with error handling
+  # check_and_cd() {
+  #   local dir="$1"
+  #   cd "$dir" || {
+  #     log "Failed to change directory to $dir"
+
+  #     exit 1
+  #   }
+  # }
+
+  # # Change to the FreeSWITCH source directory
+  # check_and_cd "$SRC_DIR"
+
+  # # Change to the FreeSWITCH source directory
+  # check_and_cd "$FREESWITCH_DIR"
+
+  # # Clean previous build
+  # make clean || {
+  #   log "Failed to clean previous build"
+
+  #   exit 1
+  # }
+
+  # # Run bootstrap and configure
+  # ./bootstrap.sh -j || {
+  #   log "Failed to run bootstrap.sh"
+
+  #   exit 1
+  # }
+  # ./configure --enable-portable-binary \
+  #   --with-gnu-ld --with-python --with-erlang --with-openssl \
+  #   --enable-core-odbc-support --enable-zrtp \
+  #   --enable-static-v8 --disable-parallel-build-v8 || {
+  #   log "Failed to configure FreeSWITCH"
+
+  #   exit 1
+  # }
+
+  # # Build and install FreeSWITCH
+  # make || {
+  #   log "Failed to build FreeSWITCH"
+
+  #   exit 1
+  # }
+  # make install || {
+  #   log "Failed to install FreeSWITCH"
+
+  #   exit 1
+  # }
+  # make cd-sounds-install || {
+  #   log "Failed to install FreeSWITCH sounds"
+
+  #   exit 1
+  # }
+  # make cd-moh-install || {
+  #   log "Failed to install FreeSWITCH MOH"
+
+  #   exit 1
+  # }
+
+  # # Return to the previous directory
+  # check_and_cd -
+
+  # # Change to the ESL directory
+  # check_and_cd "$FREESWITCH_DIR/libs/esl/"
+
+  # # Install Perl module for ESL
+  # make perlmod-install || {
+  #   log "Failed to install ESL Perl module"
+
+  #   exit 1
+  # }
+
+cd /usr/src/
+cd freeswitch*
+
+#cd /usr/src/
+#git clone https://github.com/signalwire/freeswitch.git -bv1.10 freeswitch
+#cd freeswitch
+
+make clean
+./bootstrap.sh -j
+./configure --enable-portable-binary \
+            --with-gnu-ld --with-python --with-erlang --with-openssl \
+            --enable-core-odbc-support --enable-zrtp \
+            --enable-static-v8 --disable-parallel-build-v8
+make
+make install
+make cd-sounds-install
+make cd-moh-install
+cd -
+#cd /usr/local/src/freeswitch/src/mod/codecs/mod_bcg729
+#make
+#make install
+cd -
+cd /usr/src/freeswitch/libs/esl/
+make perlmod-install
+
+
+  # Return to the script path
+  cd "$SCRIPTPATH"
+
+
+cd /usr/src/
+cd freeswitch*
+#cd $SCRIPTPATH
+cp -rf hiredis.conf.xml /usr/local/freeswitch/conf/autoload_configs/
+cp -rf lua.conf.xml /usr/local/freeswitch/conf/autoload_configs/
+cp -rf callcenter.conf.xml /usr/local/freeswitch/conf/autoload_configs/
+cp -rf auto_load.conf /usr/local/freeswitch/conf/autoload_configs/modules.conf.xml
+
+
+cp -rf  odbc.ini /etc/odbc.ini
+cp -rf freeswitch.service  /lib/systemd/system/freeswitch.service
+
+cd /usr/src/
+cd freeswitch*
+#systemctl daemon-reload
+#chmod +x /etc/init.d/freeswitch
+#update-rc.d freeswitch defaults
+
+
+#sed -i 's/http:\/\/127.0.0.1/http:\/\/127.0.0.1\/openpbx/g' /usr/local/freeswitch/conf/autoload_configs/xml_cdr.conf.xml
+sed -i 's/http:\/\/127.0.0.1/http:\/\/127.0.0.1\/openpbx/g' /usr/local/freeswitch/conf/autoload_configs/*
+
+chmod 750 /lib/systemd/system/freeswitch.service
+ln -s /lib/systemd/system/freeswitch.service /etc/systemd/system/freeswitch.service
+systemctl daemon-reload
+systemctl enable freeswitch.service
+#systemctl enable freeswitch
+systemctl restart freeswitch.service
+
+ln -s /usr/local/freeswitch/bin/freeswitch /usr/bin/freeswitch
+ln -s /usr/local/freeswitch/bin/fs_cli /usr/bin/fs_cli
+chown -R freeswitch:daemon /usr/local/freeswitch/
+chmod -R ug=rwX,o= /usr/local/freeswitch/
+chmod -R u=rwx,g=rx /usr/local/freeswitch/bin/
+chown freeswitch:daemon /usr/local/freeswitch -R
+chmod g+w /usr/local/freeswitch -R
+fi
+
+#   # Change to the FreeSWITCH source directory
+#   cd "$FREESWITCH_DIR"
+
+#   # Copy configuration files and services
+#   cp -rf hiredis.conf.xml /usr/local/freeswitch/conf/autoload_configs/ || {
+#     log "Failed to copy hiredis.conf.xml"
+
+#     exit 1
+#   }
+#   cp -rf lua.conf.xml /usr/local/freeswitch/conf/autoload_configs/ || {
+#     log "Failed to copy lua.conf.xml"
+
+#     exit 1
+#   }
+#   cp -rf callcenter.conf.xml /usr/local/freeswitch/conf/autoload_configs/ || {
+#     log "Failed to copy callcenter.conf.xml"
+
+#     exit 1
+#   }
+#   cp -rf auto_load.conf /usr/local/freeswitch/conf/autoload_configs/modules.conf.xml || {
+#     log "Failed to copy auto_load.conf"
+
+#     exit 1
+#   }
+
+#   # Copy odbc.ini file
+#   cp -rf odbc.ini /etc/odbc.ini || {
+#     log "Failed to copy odbc.ini"
+
+#     exit 1
+#   }
+
+#   # Copy FreeSWITCH service file
+#   cp -rf freeswitch.service /lib/systemd/system/freeswitch.service || {
+#     log "Failed to copy freeswitch.service"
+
+#     exit 1
+#   }
+
+#   echo "FreeSWITCH build and configuration completed successfully."
+
+#   # Replace /usr/local/freeswitch with your actual FreeSWITCH installation directory if needed
+#   FREESWITCH_DIR="/usr/local/freeswitch"
+
+#   SED_PATTERN="s#http://127.0.0.1#http://127.0.0.1/openpbx#g"
+
+#   # Update configuration files
+#   sed -i "$SED_PATTERN" "$FREESWITCH_DIR/conf/autoload_configs/xml_cdr.conf.xml" || {
+#     log "Failed to update xml_cdr.conf.xml"
+
+#     exit 1
+#   }
+#   sed -i "$SED_PATTERN" "$FREESWITCH_DIR/conf/autoload_configs/*" || {
+#     log "Failed to update other configuration files"
+
+#     exit 1
+#   }
+
+#   # Set permissions and create symbolic links
+#   chmod 750 "/lib/systemd/system/freeswitch.service" || {
+#     log "Failed to set permissions for freeswitch.service"
+
+#     exit 1
+#   }
+#   rm -f /etc/systemd/system/freeswitch.service
+#   ln -s "/lib/systemd/system/freeswitch.service" "/etc/systemd/system/freeswitch.service" || {
+#     log "Failed to create symbolic link for systemd"
+
+#     exit 1
+#   }
+
+#   # Reload systemd and enable FreeSWITCH service
+#   systemctl daemon-reload || {
+#     log "Failed to reload systemd"
+
+#     exit 1
+#   }
+#   systemctl enable freeswitch.service || {
+#     log "Failed to enable freeswitch.service"
+
+#     exit 1
+#   }
+#   systemctl restart freeswitch.service || {
+#     log "Failed to restart freeswitch.service"
+
+#     exit 1
+#   }
+
+#   # Create symbolic links for FreeSWITCH binaries
+#   rm -f /usr/bin/freeswitch
+#   ln -s "$FREESWITCH_DIR/bin/freeswitch" "/usr/bin/freeswitch" || {
+#     log "Failed to create symbolic link for freeswitch binary"
+
+#     exit 1
+#   }
+#   rm -f /usr/bin/fs_cli
+#   ln -s "$FREESWITCH_DIR/bin/fs_cli" "/usr/bin/fs_cli" || {
+#     log "Failed to create symbolic link for fs_cli binary"
+
+#     exit 1
+#   }
+
+#   # Set ownership and permissions for FreeSWITCH installation directory
+#   chown -R freeswitch:daemon "$FREESWITCH_DIR" || {
+#     log "Failed to set ownership for FreeSWITCH directory"
+
+#     exit 1
+#   }
+#   chmod -R ug=rwX,o= "$FREESWITCH_DIR" || {
+#     log "Failed to set permissions for FreeSWITCH directory"
+
+#     exit 1
+#   }
+#   chmod -R u=rwx,g=rx "$FREESWITCH_DIR/bin/" || {
+#     log "Failed to set permissions for FreeSWITCH binaries"
+
+#     exit 1
+#   }
+
+#   if [ ! -f /usr/local/freeswitch/scripts/amol.lua ]; then
+#     mv /usr/local/freeswitch/scripts /usr/local/freeswitch/scripts_bk
+#     rm -f /usr/local/freeswitch/scripts
+#     ln -s /var/www/html/openpbx/scripts /usr/local/freeswitch/scripts
+#     echo "/usr/local/freeswitch/scripts" >>/usr/local/freeswitch/scripts/amol.lua
+#     systemctl stop freeswitch
+#     systemctl start freeswitch
+#   fi
+#   echo "FreeSWITCH configuration and management completed successfully."
+
+# fi
+
+serviceName="redis"
+# Check for Redis service
+if systemctl --all --type service | grep -q "$serviceName"; then
+  log "$serviceName exists. Skipping Redis installation."
+else
+  log "Installing Redis..."
+
+  # Install Redis server
+  apt-get install -y redis-server
+
+  # Set Redis password
+  sed -i '/requirepass /c\requirepass opencc' /etc/redis/redis.conf
+
+  # Restart and enable Redis
+  systemctl restart redis
+  systemctl enable redis
+
+  echo "Redis configuration and management completed successfully."
+fi
+
+# redis installation is starting here
+serviceName="redis"
+if systemctl --all --type service | grep -q "$serviceName"; then
+  echo "$serviceName exists."
+else
+
+  apt-get install -y redis-server
+
+  sed -i '/requirepass /c\requirepass opencc' /etc/redis/redis.conf
+
+  systemctl restart redis
+  systemctl enable redis
+fi
+# redis installation is finished here

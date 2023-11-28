@@ -1,0 +1,23 @@
+{
+  "public_domain": "debian.intalk.io",
+  "software": [
+    {
+      "type": "MariaDB",
+      "ip": "127.0.0.0"
+    },
+    {
+      "type": "Freeswitch",
+      "ip": "127.0.0.0"
+    },
+    {
+      "type": "Node",
+      "ip": "127.0.0.0"
+    },
+    {
+      "type": "ApachePHP",
+      "ip": "127.0.0.0"
+    }
+  ],
+  "run": false,
+  "INTALK_VERSION": "Intalk_v1.19.40_19_JUL_2023"
+}

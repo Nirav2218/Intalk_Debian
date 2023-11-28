@@ -1,0 +1,15 @@
+[Unit]
+Description=Amol_OPENCC_NODEJS
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=30
+User=freeswitch
+Group=daemon
+WorkingDirectory=/var/www/html/openpbx/nodejs
+ExecStart=/usr/bin/node /var/www/html/openpbx/nodejs/wsssl_opencc.js
+
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,3 @@
+# Modify configuration files
+# sed -i 's/http:\/\/127.0.0.1\/hangup_data.php/http:\/\/127.0.0.1\/openpbx\/hangup_data.php/g' /usr/local/freeswitch/conf/autoload_configs/*
+# sed -i 's/http:\/\/127.0.0.1\/app/http:\/\/127.0.0.1\/openpbx\/app/g' /usr/local/freeswitch/conf/autoload_configs/*
